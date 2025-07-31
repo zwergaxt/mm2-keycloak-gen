@@ -1,0 +1,4 @@
+[Keycloak]
+url = http://keycloak.local/
+client = manager
+clientKey = 3feE6bm1OgvtgAgkfS42cAYdEmBqdaQv
