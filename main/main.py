@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def read_config():
     config = configparser.ConfigParser()
-    config.read(r"config")
+    config.read(r"/app/config/config.cfg")
 
     keycloak_config = dict(config.items("manager"))
     keycloak_config["resources"] = dict(config.items("resources"))
