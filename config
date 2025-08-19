@@ -1,4 +1,11 @@
-[Keycloak]
+[manager]
 url = http://keycloak.local/
 client = manager
-clientKey = 3feE6bm1OgvtgAgkfS42cAYdEmBqdaQv
+client_key = 3feE6bm1OgvtgAgkfS42cAYdEmBqdaQv
+
+[resources]
+kafka_client_name = kafka1
+project_id = project-1111111112111111,project-1111211111211111
+
+[client_config]
+target_client = client-1111112111212111,client-1211111111213111
