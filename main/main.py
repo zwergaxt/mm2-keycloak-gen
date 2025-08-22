@@ -1,7 +1,7 @@
 import configparser
 import traceback
 import logging
-import uuid
+import json
 from keycloak import KeycloakAdmin, KeycloakOpenIDConnection, KeycloakError
 
 # Base logger config
@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 def read_config():
     config = configparser.ConfigParser()
     config.read(r"/app/config/config.cfg")
+    # added for debug reasons
+    # config.read(r"config/config.cfg")
 
     keycloak_config = dict(config.items("manager"))
     keycloak_config["resources"] = dict(config.items("resources"))
@@ -123,7 +125,7 @@ def create_keycloak_client(payload: dict, admin_connection: KeycloakAdmin):
             )
 
             logger.info(f"Client with ID {new_client} created!")
-
+            admin_connection.generate_client_secrets(client_id=new_client)
             client_set.append(new_client)
 
         except KeycloakError as e:
@@ -284,9 +286,7 @@ def create_keycloak_resource(
 
             if resource_config["name"] in client_resources:
                 logger.warning(f"Resource {resource_config["name"]} already exists")
-                resource_set.append(
-                    client_resources.get(resource_config["name"])
-                    )
+                resource_set.append(client_resources.get(resource_config["name"]))
             else:
                 try:
                     new_resource = admin_connection.create_client_authz_resource(
@@ -368,13 +368,12 @@ def create_keycloak_client_policy(
     client_policies = get_client_policies_dict(admin_connection, client["id"])
 
     for i in target_client:
-        target_client_full.append(get_keycloak_client(
-            admin_connection=admin_connection, client_id=i
-        ))
+        target_client_full.append(
+            get_keycloak_client(admin_connection=admin_connection, client_id=i)
+        )
 
     for i in target_client_full:
         logger.info(f"Creating client policy for client with id {i["clientId"]}")
-
 
         policy_config = {
             "name": f"Client:{i["clientId"]}",
@@ -434,8 +433,12 @@ def create_keycloak_permissions(
     for i in resources:
         resources_set.append(
             {
-                "id": admin_connection.get_client_authz_resource(client_id=client["id"], resource_id=i)["_id"],
-                "name": admin_connection.get_client_authz_resource(client_id=client["id"], resource_id=i)["name"]
+                "id": admin_connection.get_client_authz_resource(
+                    client_id=client["id"], resource_id=i
+                )["_id"],
+                "name": admin_connection.get_client_authz_resource(
+                    client_id=client["id"], resource_id=i
+                )["name"],
             }
         )
 
@@ -454,7 +457,7 @@ def create_keycloak_permissions(
                         scopes_transformed["Describe"],
                         scopes_transformed["DescribeConfigs"],
                     ],
-                    "policies": policies
+                    "policies": policies,
                 }
             )
         elif "Group" in i["name"]:
@@ -472,7 +475,7 @@ def create_keycloak_permissions(
                         scopes_transformed["Write"],
                         scopes_transformed["Create"],
                     ],
-                    "policies": policies
+                    "policies": policies,
                 }
             )
         else:
@@ -492,12 +495,12 @@ def create_keycloak_permissions(
                         scopes_transformed["AlterConfigs"],
                         scopes_transformed["Alter"],
                     ],
-                    "policies": policies
+                    "policies": policies,
                 }
             )
 
     for i in payload:
-        logger.info(f"Creating permission {i}")
+        logger.info(f"Creating permission {i["name"]}")
         if i["name"] in client_permissions:
             logger.warning(f"Permission {i["name"]} already exists")
             permission_set.append(client_permissions.get(i["name"]))
@@ -512,16 +515,46 @@ def create_keycloak_permissions(
     return permission_set
 
 
+def get_client_data(admin_connection: KeycloakAdmin, clients: list):
+    """
+    Get auth data of created client
+
+    :admin_connection: admin connection
+    :clients: id of client
+    """
+    client_data = []
+
+    for i in clients:
+        try:
+            client_data.append(
+                {
+                    "name": admin_connection.get_client(client_id=i)["clientId"],
+                    "data": admin_connection.get_client_secrets(i)["value"],
+                }
+            )
+        except Exception:
+            logger.error(f"Error occured when getting client data")
+            logger.error(traceback.format_exc().splitlines()[-1])
+
+    return json.dumps(client_data, indent=4)
+
+
 config = read_config()
 admin_connect = connect_to_keycloak(config)
 client = create_keycloak_client(
     payload=config["client_config"], admin_connection=admin_connect
 )
+
 resources = create_keycloak_resource(
-    admin_connection=admin_connect, kafka_client=config["resources"]["kafka_client_name"], payload=config
+    admin_connection=admin_connect,
+    kafka_client=config["resources"]["kafka_client_name"],
+    payload=config,
 )
+
 policies = create_keycloak_client_policy(
-    admin_connection=admin_connect, kafka_client=config["resources"]["kafka_client_name"], target_client=client
+    admin_connection=admin_connect,
+    kafka_client=config["resources"]["kafka_client_name"],
+    target_client=client,
 )
 
 create_keycloak_permissions(
@@ -530,3 +563,6 @@ create_keycloak_permissions(
     policies=policies,
     resources=resources,
 )
+
+with open("data.json", "w+") as json_file:
+    json_file.write(get_client_data(admin_connection=admin_connect, clients=client)) 
